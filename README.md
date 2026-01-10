@@ -1,23 +1,22 @@
 # Poker AI Decision Game (H7 P4 D10)
 
-A deterministic, seed-reproducible poker decision game focused on
-expected-value reasoning and AI-based decision making.
+A deterministic, seed-reproducible poker decision game focused on expected-value reasoning and AI decision-making.
 
-The project is designed as a **decision system**, not a traditional poker simulator.
-Its primary goal is to explore decision-making under uncertainty, offline difficulty
-calibration, and AI policy evaluation with cleanly separated components.
+This project is designed as a **decision system**, not a traditional poker simulator. It emphasizes:
+- clean separation of concerns (engine vs AI vs API vs UI),
+- reproducibility (seed + action log replay),
+- testability (unit tests for rules and determinism),
+- and a thin web client (UI only, no game logic).
 
 ---
 
 ## Overview
 
-- **Python** is used for the game rules engine and AI logic.
-- **Web UI** is a thin client responsible only for interaction and visualization.
-- All game rules, scoring, and AI decisions live exclusively in the Python backend.
-- The system is fully reproducible given a shuffle seed and an action sequence.
-
-This separation allows the same core engine to support human play,
-AI decision making, and offline simulation.
+- **Python Engine (`engine/`)**: single source of truth for rules, state transitions, scoring, and validation.
+- **Python AI (`ai/`)**: policies that choose actions using the engine (heuristics + rollout sampling).
+- **Python API (`api/`)**: HTTP endpoints that expose game state transitions to the frontend.
+- **Web UI (`web/`)**: interaction + visualization only (card selection, sending actions, rendering results).
+- **Tests (`tests/`)**: unit tests for evaluator, actions, determinism, and replay.
 
 ---
 
@@ -57,89 +56,78 @@ AI decision making, and offline simulation.
 
 ---
 
-## Determinism and Reproducibility
+## Determinism and Replay
 
-The game engine is **deterministic** in the following sense:
-
-- Given the same shuffle seed and the same sequence of actions,
-  the game state and final score are guaranteed to be identical.
+The engine is **deterministic** in the following sense:
+- Given the same shuffle seed and the same sequence of actions, the game state and final score are identical.
 - All randomness is explicitly controlled by the seed.
-- This enables reliable AI evaluation, rollout-based expected value estimation,
-  offline difficulty calibration, and exact replay for debugging.
 
-From the player or AI perspective, future draws remain unknown,
-but the underlying system behavior is fully reproducible.
+This enables:
+- exact replay for debugging (seed + action log),
+- reliable AI evaluation (rollouts),
+- and offline difficulty calibration (seed bucketing).
 
 ---
 
-## Game Modes
+## Contracts and Documentation
 
-### Mode 1: Human vs AI
-- Human and AI have identical information
-- Both see remaining deck composition but not draw order
-- Each plays a full game independently
-- Results can be compared across individual seeds or aggregated runs
-
-### Mode 2: Difficulty / Endless Mode
-- Shuffle seeds are evaluated offline using AI or baseline policies
-- Seeds are bucketed into difficulty tiers (e.g. Easy / Medium / Hard)
-- During gameplay, seeds are sampled from a chosen tier
-- Progress is measured by consecutive clears or cumulative score
+- API contract (request/response JSON): `docs/API_CONTRACT.md`
+- Architecture / layering notes: `docs/ARCHITECTURE.md`
+- Development plan: `docs/PLAN.md`
 
 ---
 
 ## Repository Structure
 
 ```
-engine/ # Python game engine (state, actions, scoring)
-ai/ # AI logic and offline seed evaluation
-web/ # Web UI (thin client; no game logic)
-docs/ # Rules and design documentation
+engine/ # rules engine: state, actions, validation, scoring (no UI text)
+ai/ # AI policies: heuristics + rollouts (calls engine)
+api/ # HTTP API: start/step endpoints (returns structured events)
+web/ # UI only: selection + rendering (no scoring, no rule checks)
+tests/ # unit tests: evaluator, determinism, replay, validations
+docs/ # documentation: plan, architecture, API contract
 ```
 
-- `engine/` is the single source of truth for game rules.
-- `ai/` builds on top of the engine for decision-making and simulation.
-- `web/` handles only user interaction and visualization.
-- `docs/` captures rules, design decisions, and planning.
 
 ---
 
 ## Development Roadmap
 
-### Phase 0 – Repository Skeleton
-- Project structure
-- Rules documentation
-- Planning documents
+### Phase 0 – Repository Skeleton (DONE)
+- README + docs
+- project structure
+- initial UI mock (optional)
 
 ### Phase 1 – Engine MVP
 Goal: deterministic, testable core logic.
 - Seeded shuffle and reproducibility
-- State representation (hand, P, D, remaining deck)
-- Action execution (PLAY / DISCARD)
-- Poker hand classification
-- CLI-based full game simulation
+- `GameState` representation (hand, P, D, score, remaining deck)
+- Action validation + state transition (`apply(action)`)
+- Poker hand classification (5-card evaluator)
+- Scoring policy
+- Replay log (seed + action list)
 
 ### Phase 2 – AI v1
-Goal: decision making without knowledge of draw order.
+Goal: decision-making without knowledge of draw order.
 - Legal action generation
 - Heuristic evaluation
 - Rollout-based expected value estimation
-- Action recommendation
+- Action recommendation (with structured explanation keys)
 
-### Phase 3 – Difficulty Calibration
-- Offline evaluation of large numbers of seeds
+### Phase 3 – Difficulty Calibration (Mode 2)
+- Offline evaluation of many seeds
 - Difficulty metrics (expected score, variance, pass rate)
 - Seed bucketing into difficulty tiers
 
 ### Phase 4 – Web Integration
-- Web UI mock (card selection and visualization)
-- Python API for game state transitions
-- Frontend-backend integration via JSON
+- Web UI mock → backend API integration
+- Server-side validation (UI never validates rules)
+- Display AI hint + explanation
 
 ---
 
 ## Notes
 
-- Game logic is intentionally implemented in a single language (Python).
-- The web frontend never computes scores or validates actions.
-- Server-side validation and anti-cheat mechanisms are out of scope for the MVP.
+- Game logic is intentionally implemented in a single language (Python) to avoid duplicate implementations.
+- The frontend never computes scores or validates actions.
+- Anti-cheat is out of scope for MVP (but replay validation is a natural next step).
