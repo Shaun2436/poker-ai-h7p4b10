@@ -1,29 +1,32 @@
+# .gitignore for Poker AI project
+
 # Python
 __pycache__/
 *.py[cod]
-*.pyo
-*.pyd
 *.egg-info/
-dist/
 build/
+dist/
 
-# Virtual env
+# Virtual environments
 .venv/
 venv/
 .env
 
-# Test / tooling
+# Testing / coverage
 .pytest_cache/
 .coverage
 htmlcov/
 
-# OS
+# Editors / OS
+.vscode/
+.idea/
 .DS_Store
 Thumbs.db
 
-# Editors
-.vscode/
-.idea/
-
 # Node (optional)
 node_modules/
+
+# Generated outputs (offline simulation / calibration)
+out/
+reports/
+seed_cache/

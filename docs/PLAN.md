@@ -1,21 +1,17 @@
+<!-- Z:\Project\poker-ai-h7p4b10\docs\PLAN.md -->
+
 # Development Plan
 
-This plan prioritizes software engineering fundamentals:
-clear boundaries, deterministic replay, testability, and incremental delivery.
+This plan is ordered by **software architecture dependencies**, not by gameplay difficulty.
+You implement the deterministic core first, then wrap it with API, then add AI, then calibrate difficulty, then build UI.
 
 ---
 
 ## Phase 0 — Repository Skeleton (DONE)
 Definition of done:
-- `README.md` explains rules, determinism, and architecture.
-- `docs/` contains API contract and architecture notes.
-- Base folder structure exists.
-
-Deliverables:
-- `README.md`
-- `docs/PLAN.md`
-- `docs/API_CONTRACT.md`
-- `docs/ARCHITECTURE.md`
+- README explains rules, determinism, and modes
+- `docs/` contains API contract + architecture + plan
+- Base folder structure exists (`engine/`, `ai/`, `api/`, `web/`, `tests/`, `docs/`)
 
 ---
 
@@ -23,61 +19,70 @@ Deliverables:
 Goal: deterministic, testable core rules engine.
 
 Definition of done:
-- A seed produces a reproducible shuffle.
-- `GameState` can be initialized from a seed.
-- `apply(action)` validates and transitions state deterministically.
-- 5-card evaluator correctly classifies hand categories.
-- Score is computed via a scoring policy.
-- Replay works: seed + action list reproduces identical final score.
-- Unit tests cover determinism, validation, and evaluator.
+- Seeded shuffle is reproducible
+- `GameState` initializes from seed
+- `apply(action)` validates + transitions deterministically
+- 5-card evaluator correctly classifies categories
+- Scoring policy maps categories to points
+- Replay works: `seed + action_log` reproduces identical final score
+- Unit tests cover determinism, validation, evaluator
 
 Deliverables:
 - `engine/` implementation
 - `tests/` for evaluator + determinism + validation
-- CLI or minimal API harness to run a full game by providing actions
+- CLI harness to run a full game from scripted actions (good for debugging)
 
 ---
 
 ## Phase 2 — API MVP (Python FastAPI)
-Goal: expose the engine to the frontend via a stable JSON contract.
+Goal: stable JSON contract between UI and backend.
 
 Definition of done:
-- `POST /game/start` returns initial state.
-- `POST /game/step` accepts an action and returns next state + events.
-- Server validates all actions.
-- Responses contain no hard-coded UI sentences; use structured keys + params.
+- `POST /game/start` creates a game (seed or difficulty pool)
+- `POST /game/step` applies one action and returns updated state + events
+- `POST /game/jump` supports undo in Practice mode (and optional limited undo in Challenge)
+- Server validates all actions
+- Responses contain **no hard-coded UI sentences** (use `message_key + params`)
 
 Deliverables:
 - `api/` endpoints + request/response models
-- Contract documented in `docs/API_CONTRACT.md`
+- Contract implemented as documented in `docs/API_CONTRACT.md`
 
 ---
 
-## Phase 3 — AI v1
-Goal: a policy that recommends actions without knowing draw order.
+## Phase 3 — AI v1 (Two Policies)
+Goal: recommend actions without knowing draw order.
 
 Definition of done:
-- Generates legal actions.
-- Heuristic ranking (baseline).
-- Rollout sampling to estimate expected value.
-- Produces a recommended action + explanation (structured keys).
+- Legal action generation (PLAY combos, DISCARD combos)
+- **Baseline heuristic** policy (0 rollouts)
+- **Policy AI (EV)** using rollout sampling
+- Optional output:
+  - one-step hint (`ai_hint`) returned per step
+  - full trace (`ai_trace`) from initial state
 
 Deliverables:
 - `ai/` policies
-- optional offline script to run many seeds and collect metrics
+- tests for action generation and determinism of AI plumbing (where applicable)
 
 ---
 
-## Phase 4 — Mode 2 Difficulty Calibration
+## Phase 4 — Difficulty Calibration (Offline)
 Goal: bucket seeds into tiers using offline simulation.
 
 Definition of done:
-- Runs many seeds offline.
-- Produces difficulty metrics (expected score, pass rate).
-- Outputs tier files (e.g., JSON lists of seeds per tier).
+- Runs large batches of seeds offline
+- Two-stage bucketing:
+  - baseline heuristic for coarse bucketing
+  - EV rollouts to refine boundary seeds
+- Calibration runs may be executed with access to the full remaining deck composition (unordered) per seed to enable accurate seed evaluation; these runs are offline and separate from live gameplay
+- Separate pools for Practice and Challenge
+- Outputs tier files (JSON) consumed by `/game/start`
+- Outputs optional precomputed public AI trace artifacts (e.g., `out/traces/public/<policy>/<seed>.json`) which may be used by the server at runtime to serve traces quickly without performing expensive rollouts; these public artifacts MUST be generated under unknown-deck constraints.
 
 Deliverables:
 - `ai/seed_eval.py` (or similar)
+- `out/` artifacts (ignored by git)
 - `docs/` notes on tiering strategy
 
 ---
@@ -86,10 +91,13 @@ Deliverables:
 Goal: interactive UI with real backend.
 
 Definition of done:
-- Web UI can start a game (seed or random).
-- User can select cards, send actions, and see updated state.
-- Displays AI hint and explanation.
-- No duplicated rules in frontend.
+- Web UI can start a game by mode + difficulty
+- User can select cards and submit actions
+- Practice supports jump/undo UI
+- Challenge enforces pass/fail and reveals only after completion 
+- AI hint is typically hidden and may be enabled in limited form by   difficulty (policy-driven).
+- Displays AI hint and explanation keys (rendered as UI text client-side)
 
 Deliverables:
-- `web/` UI using the API endpoints
+- `web/` UI wired to API via JSON
+- minimal UX polish (selection, feedback, errors)
