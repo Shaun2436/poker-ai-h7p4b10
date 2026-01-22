@@ -4,6 +4,13 @@ from engine.state import GameState, INITIAL_HAND_SIZE, INITIAL_P, INITIAL_D
 
 
 def test_game_state_initialization_counts():
+    '''
+    Verifies that a newly initialized GameState has correct initial sizes and counters:
+    - hand size equals INITIAL_HAND_SIZE
+    - remaining deck size is 52 - INITIAL_HAND_SIZE
+    - public deck count matches internal deck size
+    - play count (P), discard budget (D), and score start at defined defaults
+    '''
     state = GameState.from_seed(123)
 
     # Internal facts
@@ -19,6 +26,12 @@ def test_game_state_initialization_counts():
 
 
 def test_game_initialization_determinism():
+    '''
+    Ensures determinism of GameState initialization:
+    creating two states with the same seed must produce identical
+    internal state (hand, deck, counters, score) and identical
+    public representations.
+    '''
     s1 = GameState.from_seed(999)
     s2 = GameState.from_seed(999)
 
@@ -34,8 +47,26 @@ def test_game_initialization_determinism():
 
 
 def test_public_state_does_not_leak_deck_composition():
+    '''
+    Ensures that the public-facing state representation does NOT
+    expose the internal deck contents.
+    Only the remaining deck count is allowed to be visible.
+    '''
     state = GameState.from_seed(42)
     public_state = state.to_public_dict()
 
     assert "deck" not in public_state
     assert public_state["deck_remaining_count"] == 52 - INITIAL_HAND_SIZE
+
+
+def test_public_state_shape():
+    '''
+    Locks the exact shape of the public state dictionary.
+    This test will fail if public API fields are added, removed,
+    or renamed, making API changes explicit and intentional.
+    '''
+    state = GameState.from_seed(1)
+    pub = state.to_public_dict()
+    assert set(pub.keys()) == {
+        "hand","deck_remaining_count","p_remaining","d_remaining","score_total"
+    }

@@ -76,14 +76,14 @@ It emphasizes:
 ### Practice Mode
 - No pass/fail target score
 - Jump/undo allowed via replay
-- Optional sync AI hint (`ai_hint`) (policy-driven; may be limited by difficulty)
+- Optional sync AI hint (`ai_hint`) (policy-driven)
 - Full AI policy trace (`ai_trace`) available
 
 ### Challenge Mode
 - Pass/fail **target score enforced**
-- AI trace is revealed only after completion.
+- AI trace is revealed only after completion
 - Jump/undo disabled or limited
-- AI hint is typically hidden and may be enabled in limited form by difficulty (policy-driven).
+- AI sync hint is typically hidden and may be enabled in limited form by difficulty (policy-driven)
 
 ---
 

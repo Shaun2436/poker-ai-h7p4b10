@@ -1,3 +1,4 @@
+# 1.
 # engine/state.py
 
 """
@@ -73,7 +74,7 @@ class GameState:
         Must NOT include deck composition
         """
         return {
-            "hand": self.hand,
+            "hand": list(self.hand),
             "deck_remaining_count": self.deck_remaining_count,
             "p_remaining": self.p_remaining,
             "d_remaining": self.d_remaining,

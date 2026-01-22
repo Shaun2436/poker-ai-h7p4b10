@@ -34,7 +34,7 @@ Policy AI under uncertainty (does **not** know draw order).
 
 Artifacts and runtime optimization:
 - The calibration pipeline SHOULD emit two artifact types: calibration-only artifacts (e.g., `out/calibration/<task>/<seed>.json`) that MAY be generated with known-deck access for tiering, and public precomputed traces (e.g., `out/traces/public/ev_rollout_v1/<seed>.json`) that MUST be generated under unknown-deck constraints.
-- The server may consume public precomputed traces at runtime to serve `ai_hint` or `ai_trace` payloads without exposing deck composition, saving compute resources.
+- The server may consume public precomputed traces at runtime to serve `ai_trace` payloads without exposing deck composition, saving compute resources.
 - Runtime policy: the server SHOULD NOT compute a full `ai_trace` on-demand; it MAY compute a single-step `ai_hint` using public state and/or serve a precomputed public `ai_trace` artifact (which MUST declare `info_set: "unknown_deck"`).
 - Artifacts should be stored in `out/` or secure storage (not committed to git).
 
