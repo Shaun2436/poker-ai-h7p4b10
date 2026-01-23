@@ -34,19 +34,27 @@ Examples: `AS`, `TD`, `7H`
 - `difficulty_tier`: project-defined string (e.g., `easy`, `medium`, `hard`)
 - Practice and Challenge use **separate seed pools** per tier.
 
+### Scoring (FINAL)
+- Points are determined ONLY by the best 5-card Texas Hold’em category.
+- Card ranks do not add extra points (no “kicker value” scoring).
+- The scoring table is a fixed mapping: `category -> points`.
+
 ### Deck Information (FINAL)
 The full deck order is determined by `seed` and is kept server-side to support deterministic replay.
 
 Visibility (gameplay):
 - The **server** stores the full deck order (or equivalent RNG state + draw pointer).
-- During live gameplay (both `practice` and `challenge`) the **player and in-game decision AI** do **not** see the deck composition or draw order. They only receive `state.deck_remaining_count` and other public state fields.
+- Draw order is **never** exposed to the player or in-game decision AI.
+- `state.deck_remaining_count` is always exposed to the client.
+- Remaining deck composition (unordered) may be exposed to the client depending on mode/policy (e.g., freely in `practice`, limited in `challenge`).
+- `ai_hint` and `ai_trace` will use remaining deck composition (unordered) but MUST NOT depend on draw order. This does not imply the composition is sent to the client.
 
 API requirements (gameplay):
 - The API **MUST** include `state.deck_remaining_count` in gameplay responses.
-- The API **MUST NOT** include `state.deck_remaining` in normal gameplay responses.
+- The API **MAY** include remaining deck composition in gameplay responses when allowed by the server’s reveal policy (see `reveal_policy` below).
 
 Offline calibration:
-- For offline **difficulty calibration** (seed bucketing), a dedicated calibration step may examine the full deck composition (unordered) for each seed for the sole purpose of assigning difficulty tiers and computing `target_score`. These calibration runs are separate from normal gameplay and from public trace generation; their outputs (tier files, target scores) are consumed by the server to seed challenge pools.
+- For offline **difficulty calibration** (seed bucketing), a dedicated calibration step may examine the full deck order (ordered) for each seed for the sole purpose of assigning difficulty tiers and computing `target_score`. These calibration runs are separate from normal gameplay and from public trace generation; their outputs (tier files, target scores) are consumed by the server to seed challenge pools.
 
 Replay guarantee:
 - Given the same `seed` and the same `action_log`, the server can reproduce the exact same game.
@@ -64,6 +72,20 @@ If a policy is `"limited"`, the response MUST include:
 Notes:
 - The client may *request* hints/jumps, but the server decides the final policies.
 
+### Reveal Policy (Deck Composition)
+To support "view remaining deck composition" with optional limits, the server returns a reveal policy:
+
+- `reveal_policy`: `"off" | "unlimited" | "limited"`
+
+If `reveal_policy` is `"limited"`, the response MUST include:
+- `reveal_budget_total`
+- `reveal_budget_remaining`
+
+Notes:
+- `reveal_policy` controls whether `state.deck_remaining_counts` / `state.deck_remaining` may be included in responses.
+- If `reveal_policy = off`, the server MUST omit `deck_remaining_counts` / `deck_remaining`.
+- If `reveal_policy = limited`, each response that includes deck composition MUST decrement `reveal_budget_remaining` (server-defined; may be triggered by an explicit reveal request or by including the fields).
+
 ### Target Score (Challenge)
 Challenge mode enforces a pass/fail `target_score`.
 
@@ -79,6 +101,7 @@ To keep the frontend simple, all successful game endpoints should return:
 - `mode`, `difficulty_tier`
 - `hint_policy`, optional `hint_budget_total`, optional `hint_budget_remaining`
 - `jump_policy`, optional `jump_budget_total`, optional `jump_budget_remaining`
+- `reveal_policy`, optional `reveal_budget_total`, optional `reveal_budget_remaining`
 - `target_score`, `step_index`, `history_len`
 - `state`, optional `events`, optional `ai_hint`
 
@@ -97,7 +120,10 @@ To keep the frontend simple, all successful game endpoints should return:
 }
 ```
 
-Note: During normal gameplay the API MUST NOT include `deck_remaining`. For offline diagnostic or calibration exports, an offline tool may export the full remaining deck as either an unordered array `deck_remaining` (e.g., `["2C", "AH", ...]`) or a counts map `deck_remaining_counts` (e.g., `{ "2C": 1, "AH": 1, "...": 0 }`). These offline exports are not part of normal game responses.
+Note: During gameplay, draw order MUST NOT be exposed. Remaining deck composition may be exposed only when allowed by the server’s reveal policy.
+- When composition is exposed, the server SHOULD prefer a canonical counts map `deck_remaining_counts` (stable for regression/replay), and MAY also provide `deck_remaining` as an unordered array for UI convenience.
+- When composition is not exposed, the server MUST omit `deck_remaining` / `deck_remaining_counts`.
+- `reveal_policy` governs what the client can see; it does not restrict server-side heuristic computation (e.g., `ai_hint`).
 
 ### Event
 ```json
@@ -131,6 +157,9 @@ Start a new game.
 - `seed` is optional:
   - if provided: start exactly that seed
   - if omitted: server samples a seed from the pool for `(mode, difficulty_tier)`
+  - Seed pools are emitted offline as `seed_manifest.json` (grouped by tier and separated by mode),
+  and are the sole runtime source for random seed selection.
+
 
 ```json
 {
@@ -178,6 +207,17 @@ Start a new game.
 ## POST /game/step
 
 Apply one action.
+
+### Game end: plays exhausted (`p_remaining == 0`)
+- The game ends normally when `state.p_remaining == 0` (valid terminal state; not an error).
+- When the game is ended, `POST /game/step` MUST NOT apply a forward action and MUST NOT mutate state/history.
+
+#### Mode-specific exceptions (e.g., undo/jump)
+- Some modes (e.g., `practice`, `challenge`) MAY support explicit "time travel" operations (such as undo/jump)
+  that revert the game to a previous non-terminal state.
+- If such an operation reverts to a state where `p_remaining > 0`, the game is considered in progress again
+  and `POST /game/step` may proceed normally from that reverted state.
+- Terminal state only blocks forward progression; it does not forbid reverting to earlier states when the mode allows it.
 
 ### Action: PLAY
 Rules:
@@ -248,8 +288,8 @@ Rules:
       "type": "DISCARD",
       "selected_indices": [1, 4]
     },
-    "explanation_key": "ai.reason.sampled_ev",
-    "params": { "samples": 2000, "estimated_ev": 153.2 }
+    "explanation_key": "ai.reason.heuristic",
+    "params": {"rule": "prefer_made_hand_or_draw", "detail": "discard low-synergy cards" }
   }
 }
 ```
@@ -314,63 +354,51 @@ Jump to an earlier step when `jump_policy` allows it. Implemented via determinis
 
 ## GET /game/{game_id}/ai_trace
 
-Return the Policy AI trace for this game seed (no draw-order knowledge during gameplay).
+Return the heuristic AI trace for this game seed (order-unknown information set; remaining deck count and remaining deck composition are known to the heuristic policy, unordered; draw order unknown).
 - In `practice`: can be available anytime.
-- In `challenge`: reveal only after completion.
+- In `challenge`: reveal optionally only after completion.
 
-Note: AI traces used strictly for offline calibration/bucketing may be generated using full deck composition for seed evaluation; these calibration-only traces are separate from public precomputed traces intended for runtime (which MUST be generated under unknown-deck constraints).
+Important:
+- `ai_trace` is heuristic-only and WILL use remaining deck count and remaining deck composition (unordered).
+- `ai_trace` MUST NOT depend on draw order.
+- Reveal timing is mode-dependent (practice anytime; challenge after completion).
 
-### Offline Trace Artifacts (two kinds)
-For offline activities we distinguish two kinds of artifacts:
+### Offline Trace Artifacts
+Public trace artifacts are generated offline (after calibration) under order-unknown constraints (no draw order; remaining deck composition is known to the heuristic policy, unordered).
 
-1) Calibration-only artifacts (used for seed bucketing and target computation)
-- These artifacts may be generated with access to the full deck composition for the purpose of assigning difficulty tiers and computing `target_score` for seeds. Store calibration artifacts under `out/calibration/` and treat them as sensitive; they are not part of the live API.
 
-2) Public precomputed AI traces (used for runtime hints/traces)
-- These artifacts MUST be generated under the **unknown-deck** constraint (i.e., the AI used to generate them must not have access to the deck composition or draw order). They are intended to be safe for runtime use and may be stored under `out/traces/public/`.
-
-Recommended public precomputed trace schema (JSON):
+Recommended public trace schema (JSON):
 ```json
 {
   "seed": 123456,
-  "policy": "ev_rollout_v1",
-  "info_set": "unknown_deck",        // required for public traces
+  "policy": "heuristic_v1",
+  "info_set": "order_unknown",
   "generated_at": "2026-01-11T12:00:00Z",
   "steps": [
     {
       "step_index": 0,
       "recommended_action": { "type": "DISCARD", "selected_indices": [2,5] },
-      "explanation_key": "ai.reason.sampled_ev",
-      "params": { "samples": 2000, "estimated_ev": 153.2 }
+      "explanation_key": "ai.reason.heuristic",
+      "params": { "rule": "prefer_made_hand_or_draw" }
     }
   ]
 }
+
 ```
-Storage and access:
-- Suggested storage path for public traces: `out/traces/public/<policy>/<seed>.json` (project `out/` is git-ignored).
-- Public precomputed traces MUST NOT include privileged/sensitive deck composition fields.
-
-Suggested usage:
-- Calibration-only artifacts (in `out/calibration/`) are used to compute seed tiers and `target_score` and may be generated with access to deck composition.
-- Public precomputed traces (in `out/traces/public/`) MUST be generated under unknown-deck constraints and may be read by the server at runtime to serve `ai_hint`/`ai_trace` payloads without revealing deck composition.
-
-Testing notes:
-- There should be tests that assert live API endpoints do not include `deck_remaining` and that public precomputed traces include `"info_set": "unknown_deck"`.
+Suggested storage:
+- Per-run pipeline artifacts (git-ignored), e.g. artifacts/pipeline/<run_id>/...
+- Trace artifacts may be stored alongside other pipeline outputs as needed for UI reveal.
 
 ### Runtime policy
-During live gameplay the server SHOULD NOT compute a full `ai_trace` on-demand. Instead it must follow this runtime policy:
-
-- Live responses MAY include a single-step `ai_hint` computed using only public state (`hand`, `p_remaining`, `d_remaining`, `deck_remaining_count`) and any server-side policies.
-- The server SHOULD NOT perform an on-demand full-sequence rollout to produce an `ai_trace` for a live request; if a trace is required for UI purposes it SHOULD be served from a precomputed public `ai_trace` artifact generated offline under the **unknown-deck** constraint (the artifact MUST include `"info_set": "unknown_deck"`).
-- Any `ai_trace` served at runtime MUST NOT contain sensitive fields like `deck_remaining` or any representation of draw order.
-
-Note: Calibration artifacts generated with access to known-deck composition remain separate and must never be exposed to live gameplay clients.
+- When enabled by `hint_policy`, live responses include a single-step `ai_hint` computed using public state and server-known remaining-deck information (remaining deck count and composition, unordered). `ai_hint` MUST NOT depend on draw order.
+- ai_trace SHOULD be served from an offline-generated heuristic trace artifact when available.
+- Any ai_trace served at runtime MUST NOT contain sensitive fields like deck_remaining or any representation of draw order.
 
 ### Response (example)
 ```json
 {
   "game_id": "local-dev",
-  "policy": "ev_rollout_v1",
+  "policy": "heuristic_v1",
   "steps": [
     {
       "step_index": 0,
@@ -378,8 +406,8 @@ Note: Calibration artifacts generated with access to known-deck composition rema
         "type": "DISCARD",
         "selected_indices": [2, 5]
       },
-      "explanation_key": "ai.reason.sampled_ev",
-      "params": { "samples": 2000, "estimated_ev": 153.2 }
+      "explanation_key": "ai.reason.heuristic",
+      "params": { "rule": "prefer_made_hand_or_draw" }
     }
   ]
 }
@@ -396,4 +424,4 @@ Note: Calibration artifacts generated with access to known-deck composition rema
 - `error.discard_budget_exceeded`
 - `error.jump_not_allowed`
 - `play.scored`
-- `ai.reason.sampled_ev`
+- `ai.reason.heuristic`

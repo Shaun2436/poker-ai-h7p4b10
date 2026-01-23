@@ -19,24 +19,28 @@ This document explains how the project is structured and why.
 - Owns rules and state transitions (`apply(action)`).
 - Owns shuffle determinism (seeded RNG).
 - Validates actions (PLAY/DISCARD constraints).
-- Scores 5-card hands (Texas Hold'em categories).
+- Scores 5-card hands (Texas Hold'em categories). Points depend ONLY on category (no rank-based points).
 - Maintains action history for replay/jump.
 
 ### AI (`ai/`)
-Policy AI under uncertainty (does **not** know draw order).
-- During live gameplay the AI does **not** see the deck composition; it only sees `deck_remaining_count` and public state fields (hand, `p_remaining`, `d_remaining`, etc.).
-- Produces either:
-  - `ai_hint` (one-step recommended action + explanation key), or
-  - `ai_trace` (full recommended sequence from start state).
-- Offline calibration uses a **two-pass pipeline** specifically for seed bucketing and may include a calibration step that inspects full deck composition (unordered) per seed for that purpose:
-  1) baseline heuristic policy (fast coarse bucketing)
-  2) EV rollout policy (slower boundary refinement)
+Heuristic-only policy under uncertainty (does **not** know draw order).
+- During live gameplay the AI does **not** know draw order.
+- The heuristic policy (e.g., `ai_hint`, `ai_trace`) WILL use remaining deck count and remaining deck composition (unordered) as part of its decision process.
+- What the player/UI can see may be more restricted (e.g., challenge reveal limits); this does not change the server-side heuristic information set.
+- Produces:
+  - `ai_hint`: computed live per step from public state (no rollouts)
+  - `ai_trace`: generated offline (heuristic-only) as one feasible path per seed (used for validation gate and UI reveal)
 
-Artifacts and runtime optimization:
-- The calibration pipeline SHOULD emit two artifact types: calibration-only artifacts (e.g., `out/calibration/<task>/<seed>.json`) that MAY be generated with known-deck access for tiering, and public precomputed traces (e.g., `out/traces/public/ev_rollout_v1/<seed>.json`) that MUST be generated under unknown-deck constraints.
-- The server may consume public precomputed traces at runtime to serve `ai_trace` payloads without exposing deck composition, saving compute resources.
-- Runtime policy: the server SHOULD NOT compute a full `ai_trace` on-demand; it MAY compute a single-step `ai_hint` using public state and/or serve a precomputed public `ai_trace` artifact (which MUST declare `info_set: "unknown_deck"`).
-- Artifacts should be stored in `out/` or secure storage (not committed to git).
+Offline calibration (seed bucketing) uses a **staged pipeline** and may include a calibration step that inspects the full deck order (ordered) per seed:
+1) baseline heuristic policy (fast coarse bucketing / pruning)
+2) rollout / EV refinement (calibration-only)
+
+Offline pipeline artifacts:
+- Stored per run (git-ignored), e.g. `artifacts/pipeline/<run_id>/...`
+- Key outputs:
+  - `calibration_results.jsonl`
+  - `trace_pass.jsonl` / `trace_fail.jsonl`
+  - `seed_manifest.json` (runtime seed pool grouped by tier)
 
 ### API (`api/`)
 Thin translation layer between HTTP and the engine.
@@ -63,14 +67,16 @@ Thin client (UI only).
 
 ### Practice
 - Jump/undo allowed (implemented via deterministic replay).
-- `ai_hint` may be shown during play (policy-driven).
-- `ai_trace` may be available anytime.
+- `ai_hint` will be shown during play.
+- `ai_trace` will be available anytime.
+- Remaining deck composition (unordered) may be revealed to the player/UI freely (draw order never revealed).
 
 ### Challenge
 - Pass/fail via `target_score`.
 - Jump/undo disabled (or optionally limited later).
 - `ai_hint` is typically hidden during play and may be enabled in limited form by difficulty (policy-driven).
 - `ai_trace` is revealed only after completion.
+- Remaining deck composition (unordered) may be revealed to the player/UI in limited uses (reveal budget / tokens); draw order never revealed.
 
 ---
 

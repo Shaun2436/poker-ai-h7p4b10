@@ -1,7 +1,7 @@
 # tests/test_cards.py
 
 import pytest
-from engine.cards import standard_deck_rs, is_valid_card_rs, parse_card_rs
+from engine.cards import standard_deck_rs, is_valid_card_rs, parse_card_rs, card_sort_key
 
 
 def test_standard_deck_is_stable_and_complete():
@@ -39,7 +39,10 @@ def test_parse_card_raises_on_invalid():
     '''
     with pytest.raises(ValueError):
         parse_card_rs("1Z")
-
+    with pytest.raises(ValueError):
+        parse_card_rs(123)
+    with pytest.raises(ValueError):
+        parse_card_rs(None)
 
 def test_rank_and_suit_edges():
     '''
@@ -70,3 +73,34 @@ def test_standard_deck_known_first_last():
     assert d[0] == "2S"
     assert d[-1] == "AC"
 
+
+def test_standard_deck_prefix_pattern():
+    '''
+    # Further locks down the canonical ordering beyond first/last.
+    # This ensures the deck is rank-major, then suit order (S, H, D, C):
+    # 2S, 2H, 2D, 2C, 3S, 3H, 3D, 3C, ...
+    '''
+    d = standard_deck_rs()
+    assert d[:8] == ["2S", "2H", "2D", "2C", "3S", "3H", "3D", "3C"]
+
+
+def test_validation_is_strict_about_case_and_whitespace():
+    '''
+    # Ensures validation is strict:
+    # - lower-case ranks/suits are rejected
+    # - leading/trailing whitespace is rejected
+    # This prevents multiple representations of the same card leaking into logs/replay.
+    '''
+    assert not is_valid_card_rs("as")
+    assert not is_valid_card_rs("7h")
+    assert not is_valid_card_rs(" AS")
+    assert not is_valid_card_rs("AS ")
+
+
+def test_card_sort_key_matches_standard_deck_order():
+    '''
+    # Ensures card_sort_key ordering matches the engine's canonical deck ordering.
+    # If UI sorts using this key, it should match standard_deck_rs() order.
+    '''
+    d = standard_deck_rs()
+    assert sorted(d, key=card_sort_key) == d

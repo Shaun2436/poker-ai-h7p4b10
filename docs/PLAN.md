@@ -31,6 +31,8 @@ Deliverables:
 - `engine/` implementation
 - `tests/` for evaluator + determinism + validation
 - CLI harness to run a full game from scripted actions (good for debugging)
+- Regression A (golden tests): hand-authored `action_log` paths used to ensure 
+  engine invariants remain stable across refactors (run via pytest / CI)
 
 ---
 
@@ -51,15 +53,13 @@ Deliverables:
 ---
 
 ## Phase 3 — AI v1 (Two Policies)
-Goal: recommend actions without knowing draw order.
+Goal: recommend actions with unknown draw order, using remaining deck count and remaining deck composition (unordered) as inputs.
 
 Definition of done:
 - Legal action generation (PLAY combos, DISCARD combos)
-- **Baseline heuristic** policy (0 rollouts)
-- **Policy AI (EV)** using rollout sampling
-- Optional output:
-  - one-step hint (`ai_hint`) returned per step
-  - full trace (`ai_trace`) from initial state
+- Heuristic-only scoring of candidate actions (no rollouts)
+- `ai_hint`: one-step hint computed live per step
+- `ai_trace`: offline-generated heuristic trace (one feasible path per seed), used for validation gate and UI reveal
 
 Deliverables:
 - `ai/` policies
@@ -75,15 +75,21 @@ Definition of done:
 - Two-stage bucketing:
   - baseline heuristic for coarse bucketing
   - EV rollouts to refine boundary seeds
-- Calibration runs may be executed with access to the full remaining deck composition (unordered) per seed to enable accurate seed evaluation; these runs are offline and separate from live gameplay
+- Calibration runs will be executed with access to the full deck composition (ordered) per seed to enable accurate seed evaluation; these runs are offline and separate from live gameplay
 - Separate pools for Practice and Challenge
-- Outputs tier files (JSON) consumed by `/game/start`
-- Outputs optional precomputed public AI trace artifacts (e.g., `out/traces/public/<policy>/<seed>.json`) which may be used by the server at runtime to serve traces quickly without performing expensive rollouts; these public artifacts MUST be generated under unknown-deck constraints.
+- Outputs per-run offline artifacts (JSONL + JSON) for traceability and reruns
+- Emits `seed_manifest.json` consumed by `/game/start` (runtime seed pool, grouped by tier)
+- Emits heuristic-only `ai_trace` artifacts under order-unknown constraints (remaining deck count and composition known; draw order unknown), used for reveal/UX and as a validation gate result (not for EV rollouts)
 
 Deliverables:
-- `ai/seed_eval.py` (or similar)
-- `out/` artifacts (ignored by git)
-- `docs/` notes on tiering strategy
+- Offline pipeline runner (calibration + trace validation)
+- Per-run artifacts (git-ignored), e.g.:
+  - `artifacts/pipeline/<run_id>/calibration_results.jsonl`
+  - `artifacts/pipeline/<run_id>/trace_pass.jsonl`
+  - `artifacts/pipeline/<run_id>/trace_fail.jsonl`
+  - `artifacts/pipeline/<run_id>/seed_manifest.json`
+  - `artifacts/pipeline/<run_id>/summary.json`
+
 
 ---
 

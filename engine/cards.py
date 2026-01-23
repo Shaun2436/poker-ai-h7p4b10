@@ -25,6 +25,7 @@ SUITS: Tuple[str,...] = ("S", "H", "D", "C") # order never changes
 # useful rank mapping for evaluator later 
 RANK_VALUE: Dict[str, int] = {r: i for i, r in enumerate(RANKS, start=2)}
 
+SUIT_INDEX: Dict[str, int] = {s: i for i, s in enumerate(SUITS)}
 
 def is_valid_card_rs(card: str) -> bool:
     """Return True if card is a valid RS string like 'AS' or '7H'."""
@@ -61,4 +62,4 @@ def card_sort_key(card: str) -> Tuple[int, int]:
     Useful if UI wants sorted display without losing stable logic.
     """
     r, s = parse_card_rs(card)
-    return (RANK_VALUE[r], SUITS.index(s))
+    return (RANK_VALUE[r], SUIT_INDEX[s])

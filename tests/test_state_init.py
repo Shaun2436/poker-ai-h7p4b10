@@ -1,5 +1,6 @@
 # tests/test_state_init.py
 
+from collections import Counter
 from engine.state import GameState, INITIAL_HAND_SIZE, INITIAL_P, INITIAL_D
 
 
@@ -46,7 +47,7 @@ def test_game_initialization_determinism():
     assert s1.to_public_dict() == s2.to_public_dict()
 
 
-def test_public_state_does_not_leak_deck_composition():
+def test_public_state_without_include_flag_has_no_deck_composition():
     '''
     Ensures that the public-facing state representation does NOT
     expose the internal deck contents.
@@ -68,5 +69,50 @@ def test_public_state_shape():
     state = GameState.from_seed(1)
     pub = state.to_public_dict()
     assert set(pub.keys()) == {
-        "hand","deck_remaining_count","p_remaining","d_remaining","score_total"
+        "hand",
+        "deck_remaining_count",
+        "p_remaining",
+        "d_remaining",
+        "score_total",
     }
+
+
+def test_public_state_can_include_unordered_deck_composition_when_allowed():
+    state = GameState.from_seed(123)
+    pub = state.to_public_dict(include_deck_composition=True)
+
+    # should include extra fields
+    assert "deck_remaining_counts" in pub
+    assert "deck_remaining" in pub
+
+    # should still NOT include internal draw-order deck
+    assert "deck" not in pub
+
+    # deck_remaining is an unordered view; in our implementation it is sorted
+    assert pub["deck_remaining"] == sorted(state.deck)
+
+    # counts should match composition
+    counts = pub["deck_remaining_counts"]
+    assert sum(counts.values()) == len(state.deck)
+    # exact multiset equality
+    assert counts == dict(Counter(state.deck))
+
+
+def test_including_deck_composition_does_not_leak_draw_order():
+    state = GameState.from_seed(999)
+    pub = state.to_public_dict(include_deck_composition=True)
+
+    # unordered view must not equal internal draw-order deck (unless by freak coincidence it is already sorted)
+    # So we check the stronger condition: it must equal sorted(deck), and sorted(deck) is deterministic.
+    assert pub["deck_remaining"] == sorted(state.deck)
+
+    # if this ever fails, you're leaking draw order
+    if state.deck != sorted(state.deck):
+        assert pub["deck_remaining"] != state.deck
+
+def test_public_determinism_with_deck_composition_included():
+    s1 = GameState.from_seed(555)
+    s2 = GameState.from_seed(555)
+
+    assert s1.to_public_dict(include_deck_composition=True) == s2.to_public_dict(include_deck_composition=True)
+
