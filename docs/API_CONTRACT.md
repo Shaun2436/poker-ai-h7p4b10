@@ -13,6 +13,31 @@ All validation, scoring, and rule enforcement happen server-side.
 
 ---
 
+## AI Information Sets
+
+There are two distinct AI contexts in the system. These contexts MUST NOT be mixed.
+
+### Gameplay AI (ai_hint / ai_trace)
+
+- Purpose: Generate hints or explanations shown to the player.
+- Information set:
+  - Exactly the same information available to the player.
+  - Always includes remaining deck composition (unordered).
+  - MUST NOT include deck order or future draws.
+- Constraint:
+  - Gameplay AI MUST NOT rely on deck order or hidden future information.
+
+### Calibration AI (bucketing only)
+
+- Purpose: Difficulty calibration, bucketing, or offline analysis.
+- Information set:
+  - Full internal game state, including ordered deck.
+- Constraint:
+  - Outputs from calibration AI MUST NOT appear in gameplay APIs.
+
+
+---
+
 ## Conventions
 
 ### Card Encoding
@@ -35,9 +60,41 @@ Examples: `AS`, `TD`, `7H`
 - Practice and Challenge use **separate seed pools** per tier.
 
 ### Scoring (FINAL)
-- Points are determined ONLY by the best 5-card Texas Hold’em category.
+- Points are determined ONLY by the evaluated **5-card hand category** returned by the server.
+- The server scores the **exact 5 cards selected** by the player; it does NOT search “best 5 out of 7”.
 - Card ranks do not add extra points (no “kicker value” scoring).
 - The scoring table is a fixed mapping: `category -> points`.
+
+Category strings (authoritative):
+- `HIGH_CARD`
+- `ONE_PAIR`
+- `TWO_PAIR`
+- `THREE_OF_A_KIND`
+- `STRAIGHT` (includes wheel A-2-3-4-5)
+- `FLUSH`
+- `FULL_HOUSE`
+- `FOUR_OF_A_KIND`
+- `STRAIGHT_FLUSH` (includes “royal flush” as straight flush)
+
+Scoring table (authoritative):
+```json
+{
+  "HIGH_CARD": 50,
+  "ONE_PAIR": 70,
+  "TWO_PAIR": 150,
+  "THREE_OF_A_KIND": 250,
+  "STRAIGHT": 300,
+  "FLUSH": 360,
+  "FULL_HOUSE": 440,
+  "FOUR_OF_A_KIND": 730,
+  "STRAIGHT_FLUSH": 999999
+}
+```
+
+Jackpot / modeling note:
+- `STRAIGHT_FLUSH` is a normal gameplay scoring category with a large point award.
+- There is NO separate early-termination “auto-pass” rule in the engine; the game still ends when `p_remaining == 0`.
+- For offline calibration and AI modeling (MODEL_CATEGORIES), `STRAIGHT_FLUSH` is treated as `FLUSH` (collapsed).
 
 ### Deck Information (FINAL)
 The full deck order is determined by `seed` and is kept server-side to support deterministic replay.
@@ -46,12 +103,13 @@ Visibility (gameplay):
 - The **server** stores the full deck order (or equivalent RNG state + draw pointer).
 - Draw order is **never** exposed to the player or in-game decision AI.
 - `state.deck_remaining_count` is always exposed to the client.
-- Remaining deck composition (unordered) may be exposed to the client depending on mode/policy (e.g., freely in `practice`, limited in `challenge`).
-- `ai_hint` and `ai_trace` will use remaining deck composition (unordered) but MUST NOT depend on draw order. This does not imply the composition is sent to the client.
+- Remaining deck composition (unordered) is public information and is exposed to the client (draw order never exposed).
+- `ai_hint` and `ai_trace` will use remaining deck composition (unordered) but MUST NOT depend on draw order.
 
 API requirements (gameplay):
 - The API **MUST** include `state.deck_remaining_count` in gameplay responses.
-- The API **MAY** include remaining deck composition in gameplay responses when allowed by the server’s reveal policy (see `reveal_policy` below).
+- The API **MUST** include remaining deck composition (unordered) via `state.deck_remaining_counts` in gameplay responses.
+- The API **MAY** also include `state.deck_remaining` as an unordered array for UI convenience.
 
 Offline calibration:
 - For offline **difficulty calibration** (seed bucketing), a dedicated calibration step may examine the full deck order (ordered) for each seed for the sole purpose of assigning difficulty tiers and computing `target_score`. These calibration runs are separate from normal gameplay and from public trace generation; their outputs (tier files, target scores) are consumed by the server to seed challenge pools.
@@ -72,20 +130,6 @@ If a policy is `"limited"`, the response MUST include:
 Notes:
 - The client may *request* hints/jumps, but the server decides the final policies.
 
-### Reveal Policy (Deck Composition)
-To support "view remaining deck composition" with optional limits, the server returns a reveal policy:
-
-- `reveal_policy`: `"off" | "unlimited" | "limited"`
-
-If `reveal_policy` is `"limited"`, the response MUST include:
-- `reveal_budget_total`
-- `reveal_budget_remaining`
-
-Notes:
-- `reveal_policy` controls whether `state.deck_remaining_counts` / `state.deck_remaining` may be included in responses.
-- If `reveal_policy = off`, the server MUST omit `deck_remaining_counts` / `deck_remaining`.
-- If `reveal_policy = limited`, each response that includes deck composition MUST decrement `reveal_budget_remaining` (server-defined; may be triggered by an explicit reveal request or by including the fields).
-
 ### Target Score (Challenge)
 Challenge mode enforces a pass/fail `target_score`.
 
@@ -101,7 +145,6 @@ To keep the frontend simple, all successful game endpoints should return:
 - `mode`, `difficulty_tier`
 - `hint_policy`, optional `hint_budget_total`, optional `hint_budget_remaining`
 - `jump_policy`, optional `jump_budget_total`, optional `jump_budget_remaining`
-- `reveal_policy`, optional `reveal_budget_total`, optional `reveal_budget_remaining`
 - `target_score`, `step_index`, `history_len`
 - `state`, optional `events`, optional `ai_hint`
 
@@ -116,14 +159,16 @@ To keep the frontend simple, all successful game endpoints should return:
   "p_remaining": 4,
   "d_remaining": 10,
   "score_total": 0,
-  "deck_remaining_count": 45
+  "deck_remaining_count": 45,
+  "deck_remaining_counts": {"2S": 1, "3S": 1, "4D": 1, "5H": 1, "6C": 1, "7S": 1, "8H": 1}
 }
 ```
 
-Note: During gameplay, draw order MUST NOT be exposed. Remaining deck composition may be exposed only when allowed by the server’s reveal policy.
-- When composition is exposed, the server SHOULD prefer a canonical counts map `deck_remaining_counts` (stable for regression/replay), and MAY also provide `deck_remaining` as an unordered array for UI convenience.
-- When composition is not exposed, the server MUST omit `deck_remaining` / `deck_remaining_counts`.
-- `reveal_policy` governs what the client can see; it does not restrict server-side heuristic computation (e.g., `ai_hint`).
+Note: Draw order is **never** exposed. Remaining deck composition is **always** public:
+- The server SHOULD provide a canonical counts map `deck_remaining_counts` (stable for regression/replay).
+  - Example keys are shown in canonical deck order (rank-major, suit order: S, H, D, C).
+  - Counts map is truncated for readability; in practice it contains all remaining cards.
+- The server MAY also provide `deck_remaining` as an unordered array for UI convenience alongside `deck_remaining_counts`.
 
 ### Event
 ```json
@@ -194,13 +239,18 @@ Start a new game.
     "p_remaining": 4,
     "d_remaining": 10,
     "score_total": 0,
-    "deck_remaining_count": 45
+    "deck_remaining_count": 45,
+    "deck_remaining_counts": {"2S": 1, "3S": 1, "4D": 1, "5H": 1, "6C": 1, "7S": 1}
   },
   "events": [
     { "type": "info", "message_key": "game.started", "params": { "seed": 123456 } }
   ]
 }
 ```
+
+Note: 
+- `deck_remaining_counts` shown is truncated for readability; in practice it contains all remaining cards in canonical order (for display/serialization stability only, not draw order).
+
 
 ---
 
@@ -218,6 +268,12 @@ Apply one action.
 - If such an operation reverts to a state where `p_remaining > 0`, the game is considered in progress again
   and `POST /game/step` may proceed normally from that reverted state.
 - Terminal state only blocks forward progression; it does not forbid reverting to earlier states when the mode allows it.
+
+### Challenge pass/fail (terminal state)
+- In `challenge` mode, pass/fail is determined at the normal terminal state (`state.p_remaining == 0`):
+  - **pass** if `state.score_total >= target_score`
+  - **fail** otherwise
+- The server SHOULD emit a final event at terminal state (e.g., `game.passed` / `game.failed`) so the UI can display the result.
 
 ### Action: PLAY
 Rules:
@@ -273,14 +329,15 @@ Rules:
     "hand": ["2C", "QS", "7D", "AC", "5H", "9S", "KH"],
     "p_remaining": 3,
     "d_remaining": 10,
-    "score_total": 120,
-    "deck_remaining_count": 40
+    "score_total": 150,
+    "deck_remaining_count": 40,
+    "deck_remaining_counts": {"2S": 1, "3S": 1, "4D": 1, "5H": 1, "6C": 1, "7S": 1}
   },
   "events": [
     {
       "type": "score",
       "message_key": "play.scored",
-      "params": { "category": "TWO_PAIR", "points": 120 }
+      "params": { "category": "TWO_PAIR", "points": 150 }
     }
   ],
   "ai_hint": {
@@ -293,6 +350,8 @@ Rules:
   }
 }
 ```
+
+Note: `deck_remaining_counts` shown is truncated for readability; in practice it contains all remaining cards in canonical order.
 
 Notes:
 - Both `practice` and `challenge` may include `ai_hint`, depending on `hint_policy`.
@@ -342,13 +401,16 @@ Jump to an earlier step when `jump_policy` allows it. Implemented via determinis
     "p_remaining": 4,
     "d_remaining": 10,
     "score_total": 0,
-    "deck_remaining_count": 45
+    "deck_remaining_count": 45,
+    "deck_remaining_counts": {"2S": 1, "3S": 1, "4D": 1, "5H": 1, "6C": 1, "7S": 1}
   },
   "events": [
     { "type": "info", "message_key": "game.jumped", "params": { "step_index": 0 } }
   ]
 }
 ```
+
+Note: `deck_remaining_counts` shown is truncated for readability; in practice it contains all remaining cards in canonical order.
 
 ---
 
@@ -390,9 +452,9 @@ Suggested storage:
 - Trace artifacts may be stored alongside other pipeline outputs as needed for UI reveal.
 
 ### Runtime policy
-- When enabled by `hint_policy`, live responses include a single-step `ai_hint` computed using public state and server-known remaining-deck information (remaining deck count and composition, unordered). `ai_hint` MUST NOT depend on draw order.
+- When enabled by `hint_policy`, live responses include a single-step `ai_hint` computed using public state (including remaining deck count and unordered remaining deck composition; draw order unknown). `ai_hint` MUST NOT depend on draw order.
 - ai_trace SHOULD be served from an offline-generated heuristic trace artifact when available.
-- Any ai_trace served at runtime MUST NOT contain sensitive fields like deck_remaining or any representation of draw order.
+- Any ai_trace served at runtime MUST NOT contain any representation of draw order (deck order).
 
 ### Response (example)
 ```json

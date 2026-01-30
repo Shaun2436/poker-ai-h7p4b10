@@ -9,7 +9,8 @@ save the state of hand, deck, p_remaining, d_remaining, score_total
 NOTE (public info model):
 - The engine may store the full deck internally for determinism/replay.
 - Public state must NOT expose deck draw order.
-- Public state may expose unordered deck composition only if allowed by reveal policy.
+- Public state DOES expose unordered remaining deck composition
+  (canonical order for serialization stability only).
 """
 
 from __future__ import annotations
@@ -75,39 +76,52 @@ class GameState:
     
     def deck_remaining_counts(self) -> Dict[str, int]:
         """
-        Canonical, unordered composition of remaining deck.
-        Key: card RS string (e.g., "AS")
-        Value: count (int)
-        """
-        # Counter preserves insertion order of first-seen keys,
-        # but ordering of dict keys should not be relied on by clients anyway.
-        return dict(Counter(self.deck))
+        Returns remaining deck composition without revealing draw order.
 
-    def deck_remaining_unordered(self) -> List[str]:
+        Keys are emitted in canonical deck order to avoid leaking
+        internal deck ordering via insertion order.
         """
-        Unordered view of remaining deck composition.
-        IMPORTANT: returns a sorted copy so we don't leak internal draw order.
-        """
-        return sorted(self.deck)
+        remaining = Counter(self.deck)
+
+        return {
+            card: remaining[card]
+            for card in standard_deck_rs()
+            if card in remaining
+        }
     
-    def to_public_dict(self, include_deck_composition: bool = False) -> Dict[str, Any]:
+    def deck_remaining(self) -> List[str]:
         """
-        Public view of state.
-        - Always safe fields are always included.
-        - If include_deck_composition=True, include composition but NOT draw order.
+        Returns remaining deck as an unordered list for UI convenience.
+
+        Cards are returned in canonical deck order (not draw order) to avoid
+        revealing the internal draw sequence.
         """
-        out: Dict[str, Any] = {
+        remaining = Counter(self.deck)
+        out: List[str] = []
+
+        for card in standard_deck_rs():
+            out.extend([card] * remaining.get(card, 0))
+
+        return out
+
+    
+    def to_public_dict(self) -> Dict[str, Any]:
+        """
+        Public view of state (gameplay).
+
+        - Draw order is never exposed.
+        - Remaining deck composition is always exposed, unordered.
+        - Canonical order is used for deterministic serialization only.
+        """
+        return {
             "hand": list(self.hand),
             "deck_remaining_count": self.deck_remaining_count,
             "p_remaining": self.p_remaining,
             "d_remaining": self.d_remaining,
             "score_total": self.score_total,
+            "deck_remaining_counts": self.deck_remaining_counts(),
+            "deck_remaining": self.deck_remaining(),
         }
 
-        if include_deck_composition:
-            out["deck_remaining_counts"] = self.deck_remaining_counts()
-            out["deck_remaining"] = self.deck_remaining_unordered()
-
-        return out
 
     

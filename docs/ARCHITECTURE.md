@@ -23,10 +23,26 @@ This document explains how the project is structured and why.
 - Maintains action history for replay/jump.
 
 ### AI (`ai/`)
+“Calibration + heuristic policies operate on MODEL_CATEGORIES where jackpot categories are removed/collapsed.”
+**MODEL_CATEGORIES** (categories visible to AI and calibration):
+- Excludes `STRAIGHT_FLUSH` (treated as jackpot in gameplay, collapsed to `FLUSH` in model world)
+- Includes: `HIGH_CARD`, `ONE_PAIR`, `TWO_PAIR`, `THREE_OF_A_KIND`, `STRAIGHT`, `FLUSH`, `FULL_HOUSE`, `FOUR_OF_A_KIND`
+The system distinguishes between two AI information contexts:
+
+1. Gameplay AI (Hints / Traces)
+   - Uses the same information set as the player.
+   - Always has access to unordered remaining deck composition (which is public to the player).
+   - Must never rely on deck order or hidden future information.
+
+2. Calibration AI
+   - Used exclusively for difficulty calibration and bucketing.
+   - Has access to full internal state, including ordered deck.
+   - Its outputs are not exposed via gameplay APIs.
+
 Heuristic-only policy under uncertainty (does **not** know draw order).
 - During live gameplay the AI does **not** know draw order.
-- The heuristic policy (e.g., `ai_hint`, `ai_trace`) WILL use remaining deck count and remaining deck composition (unordered) as part of its decision process.
-- What the player/UI can see may be more restricted (e.g., challenge reveal limits); this does not change the server-side heuristic information set.
+- The heuristic policy (e.g., `ai_hint`, `ai_trace`) will use remaining deck count and remaining deck composition (unordered) as part of its decision process.
+- The player/UI always sees this information (remaining deck composition is always public).
 - Produces:
   - `ai_hint`: computed live per step from public state (no rollouts)
   - `ai_trace`: generated offline (heuristic-only) as one feasible path per seed (used for validation gate and UI reveal)
@@ -69,14 +85,14 @@ Thin client (UI only).
 - Jump/undo allowed (implemented via deterministic replay).
 - `ai_hint` will be shown during play.
 - `ai_trace` will be available anytime.
-- Remaining deck composition (unordered) may be revealed to the player/UI freely (draw order never revealed).
+- Remaining deck composition (unordered) is always visible to the player/UI (draw order never revealed).
 
 ### Challenge
 - Pass/fail via `target_score`.
 - Jump/undo disabled (or optionally limited later).
 - `ai_hint` is typically hidden during play and may be enabled in limited form by difficulty (policy-driven).
 - `ai_trace` is revealed only after completion.
-- Remaining deck composition (unordered) may be revealed to the player/UI in limited uses (reveal budget / tokens); draw order never revealed.
+- Remaining deck composition (unordered) is always visible to the player/UI (draw order never revealed).
 
 ---
 

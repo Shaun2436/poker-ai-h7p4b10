@@ -16,7 +16,7 @@ Important:
 
 
 from __future__ import annotations
-from typing import List, Tuple, Dict
+from typing import List, Tuple, Dict, Any
 
 # Public constants , useful for evaluator/scoring later
 RANKS: Tuple[str,...] = ("2", "3", "4", "5", "6", "7", "8", "9", "T", "J", "Q", "K", "A")
@@ -27,7 +27,8 @@ RANK_VALUE: Dict[str, int] = {r: i for i, r in enumerate(RANKS, start=2)}
 
 SUIT_INDEX: Dict[str, int] = {s: i for i, s in enumerate(SUITS)}
 
-def is_valid_card_rs(card: str) -> bool:
+
+def is_valid_card_rs(card: Any) -> bool:
     """Return True if card is a valid RS string like 'AS' or '7H'."""
     if not isinstance(card, str) or len(card) != 2:   # must be str and len of 2
         return False
@@ -35,7 +36,7 @@ def is_valid_card_rs(card: str) -> bool:
     return (r in RANKS) and (s in SUITS)
 
 
-def parse_card_rs(card: str) -> Tuple[str, str]:
+def parse_card_rs(card: Any) -> Tuple[str, str]:
     """
     Parse RS card string into (rank, suit).
     Raises ValueError for invalid cards.
@@ -44,7 +45,7 @@ def parse_card_rs(card: str) -> Tuple[str, str]:
         raise ValueError(f"Invalid card RS: {card!r}")
     return card[0], card[1]
 
-
+_STANDARD_DECK_RS: Tuple[str, ...] = tuple(r + s for r in RANKS for s in SUITS)
 def standard_deck_rs() -> List[str]:
     """
     Return a standard 52-card deck in a fixed, deterministic order.
@@ -53,13 +54,13 @@ def standard_deck_rs() -> List[str]:
     - rank-major order, then suit order (SUITS)
     - e.g. 2S, 2H, 2D, 2C, 3S, 3H, ... AS, AH, AD, AC
     """
-    return [r + s for r in RANKS for s in SUITS]
-
+    return list(_STANDARD_DECK_RS)
 
 def card_sort_key(card: str) -> Tuple[int, int]:
     """
     A stable sort key for RS cards by (rank_value, suit_index).
-    Useful if UI wants sorted display without losing stable logic.
+    Useful for UI display sorting only.
+    Must NOT be used to infer gameplay or draw order.
     """
     r, s = parse_card_rs(card)
     return (RANK_VALUE[r], SUIT_INDEX[s])

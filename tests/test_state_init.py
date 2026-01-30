@@ -1,17 +1,20 @@
 # tests/test_state_init.py
 
+import random
 from collections import Counter
+
 from engine.state import GameState, INITIAL_HAND_SIZE, INITIAL_P, INITIAL_D
+from engine.cards import standard_deck_rs
 
 
 def test_game_state_initialization_counts():
-    '''
+    """
     Verifies that a newly initialized GameState has correct initial sizes and counters:
     - hand size equals INITIAL_HAND_SIZE
     - remaining deck size is 52 - INITIAL_HAND_SIZE
     - public deck count matches internal deck size
     - play count (P), discard budget (D), and score start at defined defaults
-    '''
+    """
     state = GameState.from_seed(123)
 
     # Internal facts
@@ -27,12 +30,12 @@ def test_game_state_initialization_counts():
 
 
 def test_game_initialization_determinism():
-    '''
+    """
     Ensures determinism of GameState initialization:
     creating two states with the same seed must produce identical
     internal state (hand, deck, counters, score) and identical
     public representations.
-    '''
+    """
     s1 = GameState.from_seed(999)
     s2 = GameState.from_seed(999)
 
@@ -47,72 +50,92 @@ def test_game_initialization_determinism():
     assert s1.to_public_dict() == s2.to_public_dict()
 
 
-def test_public_state_without_include_flag_has_no_deck_composition():
-    '''
-    Ensures that the public-facing state representation does NOT
-    expose the internal deck contents.
-    Only the remaining deck count is allowed to be visible.
-    '''
-    state = GameState.from_seed(42)
-    public_state = state.to_public_dict()
-
-    assert "deck" not in public_state
-    assert public_state["deck_remaining_count"] == 52 - INITIAL_HAND_SIZE
-
-
 def test_public_state_shape():
-    '''
+    """
     Locks the exact shape of the public state dictionary.
     This test will fail if public API fields are added, removed,
     or renamed, making API changes explicit and intentional.
-    '''
+    """
     state = GameState.from_seed(1)
     pub = state.to_public_dict()
+
     assert set(pub.keys()) == {
         "hand",
         "deck_remaining_count",
         "p_remaining",
         "d_remaining",
         "score_total",
+        "deck_remaining_counts",
+        "deck_remaining",
     }
 
 
-def test_public_state_can_include_unordered_deck_composition_when_allowed():
+def test_public_state_includes_unordered_deck_composition():
+    """
+    Remaining deck composition is always public:
+    - includes deck_remaining_counts (canonical order)
+    - includes deck_remaining (canonical order, not draw order)
+    - never includes internal draw-order deck field ("deck")
+    """
     state = GameState.from_seed(123)
-    pub = state.to_public_dict(include_deck_composition=True)
+    pub = state.to_public_dict()
 
-    # should include extra fields
+    # should include composition fields
     assert "deck_remaining_counts" in pub
     assert "deck_remaining" in pub
 
     # should still NOT include internal draw-order deck
     assert "deck" not in pub
 
-    # deck_remaining is an unordered view; in our implementation it is sorted
-    assert pub["deck_remaining"] == sorted(state.deck)
-
-    # counts should match composition
+    # counts should match internal deck multiset (order-independent equality)
     counts = pub["deck_remaining_counts"]
     assert sum(counts.values()) == len(state.deck)
-    # exact multiset equality
     assert counts == dict(Counter(state.deck))
 
+    # deck_remaining should include exactly the remaining multiset, in canonical order
+    remaining_list = pub["deck_remaining"]
+    assert len(remaining_list) == len(state.deck)
+    assert Counter(remaining_list) == Counter(state.deck)
 
-def test_including_deck_composition_does_not_leak_draw_order():
-    state = GameState.from_seed(999)
-    pub = state.to_public_dict(include_deck_composition=True)
+    # and it should be canonical order: same as iterating standard_deck_rs and expanding counts
+    expected_remaining: list[str] = []
+    remaining_counter = Counter(state.deck)
+    for card in standard_deck_rs():
+        expected_remaining.extend([card] * remaining_counter.get(card, 0))
+    assert remaining_list == expected_remaining
 
-    # unordered view must not equal internal draw-order deck (unless by freak coincidence it is already sorted)
-    # So we check the stronger condition: it must equal sorted(deck), and sorted(deck) is deterministic.
-    assert pub["deck_remaining"] == sorted(state.deck)
 
-    # if this ever fails, you're leaking draw order
-    if state.deck != sorted(state.deck):
-        assert pub["deck_remaining"] != state.deck
-
-def test_public_determinism_with_deck_composition_included():
+def test_public_determinism_with_deck_composition():
+    """
+    Public output must be deterministic for the same seed.
+    """
     s1 = GameState.from_seed(555)
     s2 = GameState.from_seed(555)
 
-    assert s1.to_public_dict(include_deck_composition=True) == s2.to_public_dict(include_deck_composition=True)
+    assert s1.to_public_dict() == s2.to_public_dict()
 
+
+def test_public_state_does_not_leak_draw_order():
+    """
+    Verifies that deck_remaining (the array) is returned in canonical deck order,
+    not the internal draw order.
+
+    Two states with the same remaining multiset but different internal deck order
+    should produce identical deck_remaining output.
+    """
+    state = GameState.from_seed(999)
+    original_remaining = state.deck[:]  # same multiset
+
+    # Mutate internal deck order to simulate a different draw sequence
+    rng = random.Random(111)
+    rng.shuffle(state.deck)
+
+    pub = state.to_public_dict()
+
+    # Expected canonical expansion from the ORIGINAL multiset
+    expected_remaining: list[str] = []
+    remaining_counter = Counter(original_remaining)
+    for card in standard_deck_rs():
+        expected_remaining.extend([card] * remaining_counter.get(card, 0))
+
+    assert pub["deck_remaining"] == expected_remaining

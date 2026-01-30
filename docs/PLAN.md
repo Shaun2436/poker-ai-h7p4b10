@@ -59,7 +59,7 @@ Definition of done:
 - Legal action generation (PLAY combos, DISCARD combos)
 - Heuristic-only scoring of candidate actions (no rollouts)
 - `ai_hint`: one-step hint computed live per step
-- `ai_trace`: offline-generated heuristic trace (one feasible path per seed), used for validation gate and UI reveal
+- `ai_trace`: offline-generated heuristic trace (one feasible path per seed), used for validation gate and UI reveal in challenge mode
 
 Deliverables:
 - `ai/` policies
@@ -79,7 +79,7 @@ Definition of done:
 - Separate pools for Practice and Challenge
 - Outputs per-run offline artifacts (JSONL + JSON) for traceability and reruns
 - Emits `seed_manifest.json` consumed by `/game/start` (runtime seed pool, grouped by tier)
-- Emits heuristic-only `ai_trace` artifacts under order-unknown constraints (remaining deck count and composition known; draw order unknown), used for reveal/UX and as a validation gate result (not for EV rollouts)
+- Emits heuristic-only `ai_trace` artifacts under order-unknown constraints (remaining deck count and composition always known; draw order unknown), used for UX reveal in challenge mode and as a validation gate result (not for EV rollouts)
 
 Deliverables:
 - Offline pipeline runner (calibration + trace validation)
@@ -100,7 +100,7 @@ Definition of done:
 - Web UI can start a game by mode + difficulty
 - User can select cards and submit actions
 - Practice supports jump/undo UI
-- Challenge enforces pass/fail and reveals only after completion 
+- Challenge enforces pass/fail and reveals AI trace only after completion 
 - AI hint is typically hidden and may be enabled in limited form by   difficulty (policy-driven).
 - Displays AI hint and explanation keys (rendered as UI text client-side)
 

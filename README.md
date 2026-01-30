@@ -21,8 +21,8 @@ It emphasizes:
 
 - **Policy AI (`ai/`)**  
   Decision-making under uncertainty using heuristics.
-  - `ai_hint`: computed at runtime from public state (heuristic-only, order-unknown) remaining deck composition may be revealed depending on mode/tokens
-  - `ai_trace`: generated offline from public state (heuristic-only, order-unknown) revealed freely in practice, and revealed only after completion in challenge.
+  - `ai_hint`: computed at runtime from public state (heuristic-only, order-unknown; remaining deck composition always known)
+  - `ai_trace`: generated offline from public state (heuristic-only, order-unknown; remaining deck composition always known); revealed freely in practice, and revealed only after completion in challenge.
   - Rollout/EV is used **only** for offline difficulty calibration.
 
 - **Python API (`api/`)**  
@@ -42,7 +42,7 @@ It emphasizes:
 - Number of plays **P = 4**
 - Discard budget **D = 10**
 - Standard 52-card deck, no jokers
-- **Remaining deck composition IS exposed to the player (no limit in practice mode, limited times in challenge mode) and in-game AI during gameplay (unordered); draw order is NOT exposed.**
+- **Remaining deck composition is ALWAYS exposed to the player/UI (draw order is never exposed).**
 - **Scoring depends ONLY on the 5-card hand category. Card ranks do not add extra points.**
 - Offline calibration will inspect full deck composition (ordered) per seed to assign difficulty tiers and target scores.
 - Any offline artifacts intended for gameplay (e.g., `ai_trace`) are generated under the same order-unknown constraints as runtime (remaining deck count and composition known; draw order unknown).
@@ -56,7 +56,7 @@ It emphasizes:
 
 **PLAY**
 - Select exactly 5 cards from the 7-card hand
-- Score the best 5-card Texas Hold’em category
+- Score the selected 5-card hand category (no best-of-7 search)
 - Remove those cards, draw 5 new cards
 - Decrement `P`
 
@@ -67,10 +67,13 @@ It emphasizes:
 - Discarding yields no score
 
 ### Scoring
-- Points are determined ONLY by the best 5-card Texas Hold’em category.
+- Points are determined ONLY by the evaluated 5-card hand category (no best-of-7 search).
 - Card rank values (e.g., A>K>Q...) do not modify points.
-
+- Full scoring table is defined in `docs/API_CONTRACT.md`.
+- `STRAIGHT_FLUSH` is a gameplay scoring category with a large point award; there is no special early-termination “auto-pass” rule (the game still ends when `P == 0`).
+- For calibration and AI modeling, `STRAIGHT_FLUSH` is treated as `FLUSH` (collapsed) to keep MODEL_CATEGORIES stable.
 ---
+
 
 ## Determinism and Replay
 
@@ -86,18 +89,20 @@ It emphasizes:
 - No pass/fail target score
 - Jump/undo allowed via replay
 - `ai_hint` available with unlimited uses
-- Remaining deck composition can be revealed freely (unordered)
+- Remaining deck composition is always visible to the player/UI (unordered)
 - Full AI policy trace (`ai_trace`) available at any time
 
 ### Challenge Mode
 - Pass/fail **target score enforced**
-- AI trace is revealed only after completion
-- Seed replay after fail disabled or limited (revive token)
-- Jump/undo disabled or limited depends on difficulty (rewind token)
-- `ai_hint` disabled or limited depends on difficulty (cheat token)
-- Remaining deck composition view is limited in challenge (walling token)
+- `ai_hint` is typically hidden during play (controlled by `hint_policy`: off/unlimited/limited + optional budgets; may be enabled in limited form by difficulty)
+- `ai_trace` is revealed only after completion
+- `jump_policy` controls jump/undo (off/unlimited/limited + optional budgets)
+- Remaining deck composition is always visible to the player/UI (unordered)
+- Other anti-cheat limits (e.g., “replay after fail”) are future work and are not part of the current API contract
 
 ---
+
+
 
 ## Difficulty Calibration
 
@@ -139,6 +144,6 @@ Separate seed pools are used for Practice and Challenge modes.
 
 ## Notes
 
-- Runtime decision support (`ai_hint`, `ai_trace`) is **heuristic-only** (order-unknown; remaining deck count is known; remaining deck composition may be revealed depending on mode/tokens). Rollout/EV is used **only** in offline calibration.
+- Runtime decision support (`ai_hint`, `ai_trace`) is **heuristic-only** (order-unknown; remaining deck count and composition are always known). Rollout/EV is used **only** in offline calibration.
 - The frontend never computes scores or validates rules.
 - Anti-cheat is out of scope for the MVP.
