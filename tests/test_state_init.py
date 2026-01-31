@@ -73,7 +73,7 @@ def test_public_state_shape():
 def test_public_state_includes_unordered_deck_composition():
     """
     Remaining deck composition is always public:
-    - includes deck_remaining_counts (canonical order)
+    - includes deck_remaining_counts (unordered map; key order not a contract)
     - includes deck_remaining (canonical order, not draw order)
     - never includes internal draw-order deck field ("deck")
     """

@@ -9,8 +9,9 @@ save the state of hand, deck, p_remaining, d_remaining, score_total
 NOTE (public info model):
 - The engine may store the full deck internally for determinism/replay.
 - Public state must NOT expose deck draw order.
-- Public state DOES expose unordered remaining deck composition
-  (canonical order for serialization stability only).
+- Public state DOES expose unordered remaining deck composition.
+  Any canonical ordering is used only for safe construction 
+  (to avoid leaking internal draw order); clients must not treat map key order as a contract.
 """
 
 from __future__ import annotations
@@ -71,15 +72,17 @@ class GameState:
     
     @property
     def deck_remaining_count(self) -> int:
-        """Publicly safe deck info: only the count, not composition."""
+        """Publicly safe deck info: This field exposes only the count 
+        (composition is exposed separately via deck_remaining_counts / deck_remaining)"""
         return len(self.deck)
     
     def deck_remaining_counts(self) -> Dict[str, int]:
         """
         Returns remaining deck composition without revealing draw order.
 
-        Keys are emitted in canonical deck order to avoid leaking
-        internal deck ordering via insertion order.
+        The dict is constructed by iterating canonical deck order to avoid 
+        leaking internal draw order through insertion patterns.
+        Key order must be treated as unspecified by clients.
         """
         remaining = Counter(self.deck)
 
@@ -91,7 +94,7 @@ class GameState:
     
     def deck_remaining(self) -> List[str]:
         """
-        Returns remaining deck as an unordered list for UI convenience.
+        Returns remaining deck as a canonical-ordered list for UI convenience.
 
         Cards are returned in canonical deck order (not draw order) to avoid
         revealing the internal draw sequence.
@@ -111,7 +114,7 @@ class GameState:
 
         - Draw order is never exposed.
         - Remaining deck composition is always exposed, unordered.
-        - Canonical order is used for deterministic serialization only.
+        - Canonical construction may be used to avoid leaking draw order; map key order is not part of the public contract.
         """
         return {
             "hand": list(self.hand),

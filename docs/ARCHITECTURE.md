@@ -85,6 +85,7 @@ Thin client (UI only).
 - Jump/undo allowed (implemented via deterministic replay).
 - `ai_hint` will be shown during play.
 - `ai_trace` will be available anytime.
+- Policies are fixed in practice: `hint_policy` and `jump_policy` are always `"unlimited"`.
 - Remaining deck composition (unordered) is always visible to the player/UI (draw order never revealed).
 
 ### Challenge

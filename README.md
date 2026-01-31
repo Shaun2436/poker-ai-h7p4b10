@@ -88,9 +88,10 @@ It emphasizes:
 ### Practice Mode
 - No pass/fail target score
 - Jump/undo allowed via replay
-- `ai_hint` available with unlimited uses
+- `ai_hint` available with unlimited uses (server returns `hint_policy: "unlimited"`)
 - Remaining deck composition is always visible to the player/UI (unordered)
 - Full AI policy trace (`ai_trace`) available at any time
+- Practice policy is fixed: `hint_policy` and `jump_policy` are always `"unlimited"` (see `docs/API_CONTRACT.md`).
 
 ### Challenge Mode
 - Pass/fail **target score enforced**

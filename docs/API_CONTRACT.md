@@ -109,7 +109,7 @@ Visibility (gameplay):
 API requirements (gameplay):
 - The API **MUST** include `state.deck_remaining_count` in gameplay responses.
 - The API **MUST** include remaining deck composition (unordered) via `state.deck_remaining_counts` in gameplay responses.
-- The API **MAY** also include `state.deck_remaining` as an unordered array for UI convenience.
+- The API **MAY** also include `state.deck_remaining` as a canonical-ordered array for UI display convenience. Clients MUST NOT rely on any key order in `deck_remaining_counts`.
 
 Offline calibration:
 - For offline **difficulty calibration** (seed bucketing), a dedicated calibration step may examine the full deck order (ordered) for each seed for the sole purpose of assigning difficulty tiers and computing `target_score`. These calibration runs are separate from normal gameplay and from public trace generation; their outputs (tier files, target scores) are consumed by the server to seed challenge pools.
@@ -129,6 +129,21 @@ If a policy is `"limited"`, the response MUST include:
 
 Notes:
 - The client may *request* hints/jumps, but the server decides the final policies.
+
+#### Policy defaults by mode (normative)
+The policy fields are general-purpose; the following table summarizes
+the effective policy space by mode. Normative constraints are listed below.
+
+| mode      | hint_policy   | jump_policy   |
+|-----------|---------------|---------------|
+| practice  | unlimited     | unlimited     |
+| challenge | off / limited / unlimited (server-defined by difficulty) | off / limited / unlimited (server-defined bydifficulty) |
+
+Additional constraints:
+- If `mode == "practice"`, the server MUST return `hint_policy: "unlimited"` and `jump_policy: "unlimited"`.
+- If `mode == "challenge"`, the server MAY return any of `"off" | "limited" | "unlimited"` per policy.
+- If either policy is `"limited"`, the server MUST include the corresponding `*_budget_total` and `*_budget_remaining` fields.
+- If a policy is `"unlimited"`, the corresponding `*_budget_total` and `*_budget_remaining` fields MUST NOT be included.
 
 ### Target Score (Challenge)
 Challenge mode enforces a pass/fail `target_score`.
@@ -165,10 +180,10 @@ To keep the frontend simple, all successful game endpoints should return:
 ```
 
 Note: Draw order is **never** exposed. Remaining deck composition is **always** public:
-- The server SHOULD provide a canonical counts map `deck_remaining_counts` (stable for regression/replay).
-  - Example keys are shown in canonical deck order (rank-major, suit order: S, H, D, C).
-  - Counts map is truncated for readability; in practice it contains all remaining cards.
-- The server MAY also provide `deck_remaining` as an unordered array for UI convenience alongside `deck_remaining_counts`.
+- `deck_remaining_counts` is an unordered map of remaining deck composition (content is stable for regression/replay; key order is NOT part of the contract).
+  - Examples may show keys in canonical deck order, but clients MUST treat the map as unordered.
+  - The map is truncated for readability; in practice it contains all remaining cards (counts > 0).
+- The server MAY also provide `deck_remaining` as a canonical-ordered array for UI convenience (canonical deck order; not draw order).
 
 ### Event
 ```json
@@ -249,8 +264,7 @@ Start a new game.
 ```
 
 Note: 
-- `deck_remaining_counts` shown is truncated for readability; in practice it contains all remaining cards in canonical order (for display/serialization stability only, not draw order).
-
+- `deck_remaining_counts` shown is truncated for readability; in practice it contains all remaining cards (counts > 0). Key order is not part of the contract.
 
 ---
 
@@ -351,7 +365,8 @@ Rules:
 }
 ```
 
-Note: `deck_remaining_counts` shown is truncated for readability; in practice it contains all remaining cards in canonical order.
+Note: 
+- `deck_remaining_counts` shown is truncated for readability; in practice it contains all remaining cards (counts > 0). Key order is not part of the contract.
 
 Notes:
 - Both `practice` and `challenge` may include `ai_hint`, depending on `hint_policy`.
@@ -410,7 +425,8 @@ Jump to an earlier step when `jump_policy` allows it. Implemented via determinis
 }
 ```
 
-Note: `deck_remaining_counts` shown is truncated for readability; in practice it contains all remaining cards in canonical order.
+Note: 
+- `deck_remaining_counts` shown is truncated for readability; in practice it contains all remaining cards (counts > 0). Key order is not part of the contract.
 
 ---
 
