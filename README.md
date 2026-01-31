@@ -24,6 +24,7 @@ It emphasizes:
   - `ai_hint`: computed at runtime from public state (heuristic-only, order-unknown; remaining deck composition always known)
   - `ai_trace`: generated offline from public state (heuristic-only, order-unknown; remaining deck composition always known); revealed freely in practice, and revealed only after completion in challenge.
   - Rollout/EV is used **only** for offline difficulty calibration.
+  - See docs/CALIBRATION_PIPELINE.md for offline calibration and data preparation details.
 
 - **Python API (`api/`)**  
   Exposes engine transitions via JSON. No game logic lives in the API.
@@ -140,6 +141,7 @@ Separate seed pools are used for Practice and Challenge modes.
 - API contract: `docs/API_CONTRACT.md`
 - Architecture notes: `docs/ARCHITECTURE.md`
 - Development plan: `docs/PLAN.md`
+- offline calibration: `CALIBRATION_PIPELINE.md`
 
 ---
 
