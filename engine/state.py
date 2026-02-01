@@ -16,12 +16,12 @@ NOTE (public info model):
 
 from __future__ import annotations
 
-import random
 from collections import Counter
 from dataclasses import dataclass
 from typing import List, Dict, Any
 
 from engine.cards import standard_deck_rs
+from engine.rng import shuffled_deck_rs
 
 INITIAL_HAND_SIZE = 7
 INITIAL_P = 4
@@ -54,10 +54,8 @@ class GameState:
         Initialize a new game state from a shuffled seed
         Deterministic: same seed => same hand and deck
         """
-        rng = random.Random(seed)
 
-        deck = standard_deck_rs()
-        rng.shuffle(deck)
+        deck = shuffled_deck_rs(seed=seed)
 
         hand = deck[:INITIAL_HAND_SIZE]
         remaining_deck = deck[INITIAL_HAND_SIZE:]
